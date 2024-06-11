@@ -1,83 +1,59 @@
-import os
-import os.path
-import cgi
-import click
-import unicodecsv as csv
-from sqlalchemy import and_ as _and_
-import tempfile
-from azure.storage.blob import ContentSettings  # type: ignore
-from azure.storage.blob import BlobServiceClient
+# -*- coding: utf-8 -*-
+from __future__ import annotations
 import mimetypes
 
-from ckan.lib.munge import munge_filename
+import os.path
+import tempfile
+
+import ckan.lib.helpers as h
+import ckan.plugins.toolkit as tk
 from ckan import model
-
+from ckan.lib import base, uploader
 from ckanapi import LocalCKAN
+from werkzeug.datastructures import FileStorage as FakeFileStorage
 
-from ckanext.cloudstorage.storage import (
-    CloudStorage,
-    ResourceCloudStorage
-)
-from ckanext.cloudstorage.model import (
-    create_tables,
-    drop_tables
-)
+from ckanext.cloudstorage.storage import CloudStorage, ResourceCloudStorage
 
-from ckan.plugins.toolkit import h
-from ckan.logic import NotFound
-
-
-class FakeFileStorage(cgi.FieldStorage):
-    def __init__(self, fp, filename):
-        self.file = fp
-        self.filename = filename
-
-
-def initdb():
-    drop_tables()
-    create_tables()
-    print("DB tables are reinitialized")
+# (canada fork only): add more utility commands
+import click
+from sqlalchemy import and_ as _and_
+from ckan.lib.munge import munge_filename
+from azure.storage.blob import ContentSettings  # type: ignore
+from azure.storage.blob import BlobServiceClient  # type: ignore
 
 
 def fix_cors(domains):
     cs = CloudStorage()
 
     if cs.can_use_advanced_azure:
+        from azure.storage import CorsRule
         from azure.storage import blob as azure_blob
-        from azure.storage.models import CorsRule
 
         blob_service = azure_blob.BlockBlobService(
-            cs.driver_options['key'],
-            cs.driver_options['secret']
+            cs.driver_options["key"], cs.driver_options["secret"]
         )
 
         blob_service.set_blob_service_properties(
-            cors=[
-                CorsRule(
-                    allowed_origins=domains,
-                    allowed_methods=['GET']
-                )
-            ]
+            cors=[CorsRule(allowed_origins=domains, allowed_methods=["GET"])]
         )
-        print('Done!')
+        return "Done!", True
     else:
-        print(
-            'The driver {driver_name} being used does not currently'
-            ' support updating CORS rules through'
-            ' cloudstorage.'.format(
-                driver_name=cs.driver_name
-            )
+        return (
+            "The driver {driver_name} being used does not currently"
+            " support updating CORS rules through"
+            " cloudstorage.".format(driver_name=cs.driver_name),
+            False,
         )
 
 
-def migrate(path, single_id=None):
+def migrate(path, single_id):
     if not os.path.isdir(path):
-        print('The storage directory cannot be found.')
+        print("The storage directory cannot be found.")
         return
 
     lc = LocalCKAN()
     resources = {}
-    failed = []
+    failed: list[str] = []
 
     # The resource folder is stuctured like so on disk:
     # - storage/
@@ -95,7 +71,7 @@ def migrate(path, single_id=None):
         if not files:
             continue
 
-        split_root = root.split('/')
+        split_root = root.split("/")
         resource_id = split_root[-2] + split_root[-1]
 
         for file_ in files:
@@ -103,58 +79,107 @@ def migrate(path, single_id=None):
             if single_id and ckan_res_id != single_id:
                 continue
 
-            resources[ckan_res_id] = os.path.join(
-                root,
-                file_
-            )
+            resources[ckan_res_id] = os.path.join(root, file_)
 
-    for i, resource in enumerate(resources.iteritems(), 1):
+    for i, resource in enumerate(iter(list(resources.items())), 1):
         resource_id, file_path = resource
-        print('[{i}/{count}] Working on {id}'.format(
-            i=i,
-            count=len(resources),
-            id=resource_id
-        ))
-
+        print(
+            "[{i}/{count}] Working on {id}".format(
+                i=i, count=len(resources), id=resource_id
+            )
+        )
         try:
             resource = lc.action.resource_show(id=resource_id)
-        except NotFound:
-            print(u'\tResource not found')
+        except tk.ObjectNotFound:
+            print("\tResource not found")
+            continue
+        if resource["url_type"] != "upload":
+            print("\t`url_type` is not `upload`. Skip")
             continue
 
-        if resource['url_type'] != 'upload':
-            print(u'\t`url_type` is not `upload`. Skip')
-            continue
-
-        with open(file_path, 'rb') as fin:
-            resource['upload'] = FakeFileStorage(
-                fin,
-                resource['url'].split('/')[-1]
+        with open(file_path, "rb") as fin:
+            resource["upload"] = FakeFileStorage(
+                fin, resource["url"].split("/")[-1]
             )
             try:
                 uploader = ResourceCloudStorage(resource)
-                uploader.upload(resource['id'])
+                uploader.upload(resource["id"])
             except Exception as e:
                 failed.append(resource_id)
-                print(u'\tError of type {0} during upload: {1}'.format(type(e), e))
+                print(
+                    "\tError of type {0} during upload: {1}".format(type(e), e)
+                )
 
     if failed:
         log_file = tempfile.NamedTemporaryFile(delete=False)
-        log_file.file.writelines(failed)
-        print(u'ID of all failed uploads are saved to `{0}`'.format(log_file.name))
+        log_file.file.writelines([l.encode() for l in failed])
+        print(
+            "ID of all failed uploads are saved to `{0}`: {1}".format(
+                log_file.name, failed
+            )
+        )
 
 
+def resource_download(id, resource_id, filename=None):
+    context = {
+        "model": model,
+        "session": model.Session,
+        "user": tk.c.user or tk.c.author,
+        "auth_user_obj": tk.c.userobj,
+    }
+
+    try:
+        resource = tk.get_action("resource_show")(context, {"id": resource_id})
+    except tk.ObjectNotFound:
+        return base.abort(404, tk._("Resource not found"))
+    except tk.NotAuthorized:
+        return base.abort(
+            401, tk._("Unauthorized to read resource {0}".format(id))
+        )
+
+    # This isn't a file upload, so either redirect to the source
+    # (if available) or error out.
+    if resource.get("url_type") != "upload":
+        url = resource.get("url")
+        if not url:
+            return base.abort(404, tk._("No download is available"))
+        return h.redirect_to(url)
+
+    if filename is None:
+        # No filename was provided so we'll try to get one from the url.
+        filename = os.path.basename(resource["url"])
+
+    upload = uploader.get_resource_uploader(resource)
+
+    # if the client requests with a Content-Type header (e.g. Text preview)
+    # we have to add the header to the signature
+    content_type = getattr(tk.request, "content_type", None)
+    if not content_type:
+        content_type, _enc = mimetypes.guess_type(filename)
+
+    uploaded_url = upload.get_url_from_filename(
+        resource["id"], filename, content_type=content_type
+    )
+
+    # The uploaded file is missing for some reason, such as the
+    # provider being down.
+    if uploaded_url is None:
+        return base.abort(404, tk._("No download is available"))
+
+    return h.redirect_to(uploaded_url)
+
+
+# (canada fork only): add more utility commands
 def migrate_file(file_path, resource_id):
     if not os.path.isfile(file_path):
         print('The file path is not a file.')
         return
 
-    lc = LocalCKAN()
     failed = []
 
     try:
-        resource = lc.action.resource_show(id=resource_id)
-    except NotFound:
+        resource = tk.get_action('resource_show')({'ignore_auth': True}, {'id': resource_id})
+    except tk.ObjectNotFound:
         print(u'Resource not found')
         return
 
@@ -183,6 +208,7 @@ def migrate_file(file_path, resource_id):
         print(u'ID of all failed uploads are saved to `{0}`'.format(log_file.name))
 
 
+# (canada fork only): add more utility commands
 def _get_uploads(get_linked = True, return_upload_objects_only = False):
     # type: (bool, bool) -> tuple[float, list]
     cs = CloudStorage()
@@ -247,6 +273,7 @@ def _get_uploads(get_linked = True, return_upload_objects_only = False):
     return total_space_used, parsed_uploads
 
 
+# (canada fork only): add more utility commands
 def _humanize_space(space):
     # type: (float) -> tuple[float, str]
     parsed_space = space
@@ -257,6 +284,7 @@ def _humanize_space(space):
     return space, 'KB'
 
 
+# (canada fork only): add more utility commands
 def _write_uploads_to_csv(output_path, uploads):
     #type: (str, list) -> None
     if not uploads:
@@ -290,6 +318,7 @@ def _write_uploads_to_csv(output_path, uploads):
                     .format(len(uploads), output_path))
 
 
+# (canada fork only): add more utility commands
 def list_linked_uploads(output_path):
     # type: (str|None) -> None
     used_space, good_uploads = _get_uploads()
@@ -302,6 +331,7 @@ def list_linked_uploads(output_path):
                     .format(len(good_uploads), used_space, unit))
 
 
+# (canada fork only): add more utility commands
 def list_unlinked_uploads(output_path):
     # type: (str|None) -> None
     used_space, uploads_missing_resources = _get_uploads(get_linked = False)
@@ -314,6 +344,7 @@ def list_unlinked_uploads(output_path):
                     .format(len(uploads_missing_resources), used_space, unit))
 
 
+# (canada fork only): add more utility commands
 def remove_unlinked_uploads():
     cs = CloudStorage()
 
@@ -346,6 +377,7 @@ def remove_unlinked_uploads():
                     .format(used_space, unit))
 
 
+# (canada fork only): add more utility commands
 def list_missing_uploads(output_path):
     # type: (str|None) -> None
     cs = CloudStorage()
@@ -393,6 +425,7 @@ def list_missing_uploads(output_path):
                     .format(len(resources_missing_uploads)))
 
 
+# (canada fork only): add more utility commands
 def reguess_mimetypes(resource_id=None, verbose=False):
     # type: (str|None, bool) -> None
     lc = LocalCKAN()
@@ -419,7 +452,7 @@ def reguess_mimetypes(resource_id=None, verbose=False):
     for resource_id, package_id in resource_fields:
         try:
             resource = lc.action.resource_show(id=resource_id)
-        except NotFound:
+        except tk.ObjectNotFound:
             if verbose:
                 click.echo(u'Could not find resource {}. Skipping...'.format(resource_id))
             continue

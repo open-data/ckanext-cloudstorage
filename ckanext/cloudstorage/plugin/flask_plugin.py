@@ -1,23 +1,21 @@
 # -*- coding: utf-8 -*-
 
 import ckan.plugins as p
-from ckanext.cloudstorage import views, cli
+
+from ckanext.cloudstorage.cli import get_commands
+from ckanext.cloudstorage.views import get_blueprints
 
 
 class MixinPlugin(p.SingletonPlugin):
-    p.implements(p.IClick)
     p.implements(p.IBlueprint)
+    p.implements(p.IClick)
 
     # IBlueprint
 
     def get_blueprint(self):
-        return [
-            views.resource_blueprint
-        ]
+        return get_blueprints()
 
     # IClick
 
     def get_commands(self):
-        return cli.get_commands()
-
-    
+        return get_commands()

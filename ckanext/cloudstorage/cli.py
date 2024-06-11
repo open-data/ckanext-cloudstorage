@@ -1,40 +1,37 @@
+# -*- coding: utf-8 -*-
+
 import click
 
-from ckanext.cloudstorage import utils
+import ckanext.cloudstorage.utils as utils
+
+
+@click.group()
+def cloudstorage():
+    """CloudStorage management commands."""
+    pass
+
+
+@cloudstorage.command("fix-cors")
+@click.argument("domains", nargs=-1)
+def fix_cors(domains):
+    """Update CORS rules where possible."""
+    msg, ok = utils.fix_cors(domains)
+    click.secho(msg, fg="green" if ok else "red")
+
+
+@cloudstorage.command()
+@click.argument("path")
+@click.argument("resource", required=False)
+def migrate(path, resource):
+    """Upload local storage to the remote."""
+    utils.migrate(path, resource)
 
 
 def get_commands():
     return [cloudstorage]
 
 
-@click.group()
-def cloudstorage():
-    """CloudStorage management commands.
-    """
-    pass
-
-
-@cloudstorage.command()
-def initdb():
-    """Reinitalize database tables."""
-    utils.initdb()
-
-
-@cloudstorage.command()
-@click.argument(u'domains')
-def fix_cors(domains):
-    """Update CORS rules where possible."""
-    utils.fix_cors(domains)
-
-
-@cloudstorage.command()
-@click.argument(u'path_to_storage')
-@click.argument(u'resource_id', required=False)
-def migrate(path_to_storage, resource_id):
-    """Upload local storage to the remote."""
-    utils.migrate(path_to_storage, resource_id)
-
-
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 @click.argument(u'path_to_file')
 @click.argument(u'resource_id')
@@ -43,6 +40,7 @@ def migrate_file(path_to_file, resource_id):
     utils.migrate_file(path_to_file, resource_id)
 
 
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 @click.option(
     "-o",
@@ -55,12 +53,14 @@ def list_unlinked_uploads(output):
     utils.list_linked_uploads(output)
 
 
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 def remove_unlinked_uploads():
     """Permanently deletes uploads from the storage container that do not match to any resources."""
     utils.remove_unlinked_uploads()
 
 
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 @click.option(
     "-o",
@@ -73,6 +73,7 @@ def list_missing_uploads(output):
     utils.list_missing_uploads(output)
 
 
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 @click.option(
     "-o",
@@ -85,6 +86,7 @@ def list_linked_uploads(output):
     utils.list_linked_uploads(output)
 
 
+# (canada fork only): add more utility commands
 @cloudstorage.command()
 @click.option(
     "-r",
