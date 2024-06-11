@@ -18,7 +18,7 @@ import click
 from sqlalchemy import and_ as _and_
 from ckan.lib.munge import munge_filename
 from azure.storage.blob import ContentSettings  # type: ignore
-from azure.storage.blob import BlobServiceClient  # type: ignore
+from azure.storage.blob._blob_service_client import BlobServiceClient  # type: ignore
 
 
 def fix_cors(domains):
