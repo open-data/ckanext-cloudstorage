@@ -9,7 +9,6 @@ import ckan.lib.helpers as h
 import ckan.plugins.toolkit as tk
 from ckan import model
 from ckan.lib import base, uploader
-from ckanapi import LocalCKAN
 from werkzeug.datastructures import FileStorage as FakeFileStorage
 
 from ckanext.cloudstorage.storage import CloudStorage, ResourceCloudStorage
@@ -51,7 +50,6 @@ def migrate(path, single_id):
         print("The storage directory cannot be found.")
         return
 
-    lc = LocalCKAN()
     resources = {}
     failed: list[str] = []
 
@@ -89,7 +87,7 @@ def migrate(path, single_id):
             )
         )
         try:
-            resource = lc.action.resource_show(id=resource_id)
+            resource = tk.get_action('resource_show')({'ignore_auth': True}, {'id': resource_id})
         except tk.ObjectNotFound:
             print("\tResource not found")
             continue
@@ -428,8 +426,6 @@ def list_missing_uploads(output_path):
 # (canada fork only): add more utility commands
 def reguess_mimetypes(resource_id=None, verbose=False):
     # type: (str|None, bool) -> None
-    lc = LocalCKAN()
-
     if resource_id:
         resource_fields = [(resource_id, None)]
     else:
@@ -451,7 +447,7 @@ def reguess_mimetypes(resource_id=None, verbose=False):
 
     for resource_id, package_id in resource_fields:
         try:
-            resource = lc.action.resource_show(id=resource_id)
+            resource = tk.get_action('resource_show')({'ignore_auth': True}, {'id': resource_id})
         except tk.ObjectNotFound:
             if verbose:
                 click.echo(u'Could not find resource {}. Skipping...'.format(resource_id))

@@ -1,3 +1,15 @@
+# Cloud Storage - Canada Fork Changes
+
+The Canada branches since the CKAN 2.9 upgrades use the upstream fork by [DataShades.](https://github.com/DataShades/ckanext-cloudstorage)
+
+The Canada fork adds some utility commands:
+- `migrate-file` to migrate a single file for a Resource.
+- `list-unlinked-uploads` to list files in your storage container that are not linked to a Resource in the Database.
+- `remove-unlinked-uploads` to delete the files in your storage container that are not linked to a Resource in the Database.
+- `list-missing-uploads` to list Resources that do not actually have a file in the storage container.
+- `list-linked-uploads` to list files in your storage container that are linked to existing Resource in the Database.
+- `reguess-mimetypes` to reguess the mimetype for all uploaded Resources in the Database and set the file's headers to the mimetype in the storage container.
+
 # ckanext-cloudstorage
 
 Implements support for using S3, Azure, or any of 15 different storage
