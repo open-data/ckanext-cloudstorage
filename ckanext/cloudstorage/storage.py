@@ -248,6 +248,17 @@ class ResourceCloudStorage(CloudStorage):
         """
         return os.path.join("resources", rid, munge.munge_filename(filename))
 
+    def get_path(self, resource_id):
+        # (canada fork only): add get_path
+        # at this point, any auth should be done already as you
+        # have to pass a Resource object to even get the uploader class
+        # TODO: upstream contribution??
+        user = p.toolkit.get_action('get_site_user')({'ignore_auth': True}, {})
+        resource = p.toolkit.get_action('resource_show')({"user": user['name']}, {'id': resource_id})
+        filename = resource['url'].rsplit('/', 1)[-1]
+
+        return self.get_url_from_filename(resource_id, filename)
+
     def upload(self, id, max_size=10):
         """
         Complete the file upload, or clear an existing upload.
