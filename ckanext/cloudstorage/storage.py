@@ -125,6 +125,18 @@ class CloudStorage(object):
             config.get("ckanext.cloudstorage.use_secure_urls", False)
         )
 
+    # (canada fork only): add connection_link for new lib support
+    # TODO: upstream contrib??
+    @property
+    def connection_link(self):
+        """
+        The connection link to the container
+        """
+        return "AccountName={};AccountKey={}".format(
+            self.driver_options['key'],
+            self.driver_options['secret']
+        )
+
     @property
     def leave_files(self):
         """
@@ -268,27 +280,26 @@ class ResourceCloudStorage(CloudStorage):
         """
         if self.filename:
             if self.can_use_advanced_azure:
-                # (canada fork only): fix import
-                # TODO: upstream contrib??
-                from azure.storage.blob.blockblobservice import BlockBlobService
-                from azure.storage.blob.models import ContentSettings
+                # (canada fork only): new lib support for azure-storage-blob
+                #                     azure-storage is deprecated.
+                # TODO: upstream contrib
+                from azure.storage.blob import ContentSettings  # type: ignore
+                from azure.storage.blob import BlobServiceClient
 
-                blob_service = BlockBlobService(
-                    self.driver_options["key"], self.driver_options["secret"]
-                )
-                content_settings = None
+                svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+                container_client = svc_client.get_container_client(self.container_name)
+                blob_client = container_client.get_blob_client(self.path_from_filename(
+                                                                    id,
+                                                                    self.filename
+                                                                ))
+                stream = self.file_upload
+                blob_client.upload_blob(stream, overwrite=True)
                 if self.guess_mimetype:
                     content_type, _ = mimetypes.guess_type(self.filename)
-                    if content_type:
-                        content_settings = ContentSettings(
-                            content_type=content_type
-                        )
-                return blob_service.create_blob_from_stream(
-                    container_name=self.container_name,
-                    blob_name=self.path_from_filename(id, self.filename),
-                    stream=self.file_upload,
-                    content_settings=content_settings,
-                )
+                    if not content_type:
+                        content_type = 'application/octet-stream'
+                    blob_client.set_http_headers(ContentSettings(content_type=content_type))
+                return stream.tell()
             else:
                 try:
                     file_upload = self.file_upload
@@ -420,25 +431,42 @@ class ResourceCloudStorage(CloudStorage):
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
         if self.can_use_advanced_azure and self.use_secure_urls:
-            # (canada fork only): fix imports
-            # TODO: upstream contrib??
-            from azure.storage.blob.blockblobservice import BlockBlobService
-            from azure.storage.blob.baseblobservice import BlobPermissions
+            # (canada fork only): new lib support for azure-storage-blob
+            #                     azure-storage is deprecated.
+            # TODO: upstream contrib
+            from azure.storage.blob import BlobClient, BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
-            blob_service = BlockBlobService(
-                self.driver_options["key"], self.driver_options["secret"]
+            svc_client = BlobServiceClient.from_connection_string(self.connection_link)
+            container_client = svc_client.get_container_client(self.container_name)
+            blob_client = container_client.get_blob_client(path)
+            permissions = BlobSasPermissions(read=True)
+            token_expires = datetime.utcnow() + timedelta(hours=1)
+            sas_token = generate_blob_sas(account_name=blob_client.account_name,
+                                      account_key=blob_client.credential.account_key,
+                                      container_name=blob_client.container_name,
+                                      blob_name=blob_client.blob_name,
+                                      permission=permissions,
+                                      expiry=token_expires)
+
+            blob_client = BlobClient(svc_client.url,
+                                    container_name=blob_client.container_name,
+                                    blob_name=blob_client.blob_name,
+                                    credential=sas_token)
+
+            # The url from blob_client above actually generate the url for download
+            # but the file path is mixed with the filename e.g
+            # we want to download `example.csv` but the url generate this
+            # `resource12565-316r3example.csv` which is mung of the filename with its path
+            # hence the below method enable the actual download of the file with its name
+            url = 'https://{}.blob.core.windows.net/{}/{}?{}'.format(
+                blob_client.account_name,
+                self.container_name,
+                path,
+                sas_token
             )
 
-            return blob_service.make_blob_url(
-                container_name=self.container_name,
-                blob_name=path,
-                sas_token=blob_service.generate_blob_shared_access_signature(
-                    container_name=self.container_name,
-                    blob_name=path,
-                    expiry=datetime.utcnow() + timedelta(seconds=config_secure_ttl()),
-                    permission=BlobPermissions.READ,
-                ),
-            )
+            return url
+
         elif self.can_use_advanced_aws and self.use_secure_urls:
             from boto.s3.connection import S3Connection
 
