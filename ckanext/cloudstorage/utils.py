@@ -26,9 +26,11 @@ def fix_cors(domains):
 
     if cs.can_use_advanced_azure:
         from azure.storage import CorsRule
-        from azure.storage import blob as azure_blob
+        # (canada fork only): fix import
+        # TODO: upstream contrib??
+        from azure.storage.blob.blockblobservice import BlockBlobService
 
-        blob_service = azure_blob.BlockBlobService(
+        blob_service = BlockBlobService(
             cs.driver_options["key"], cs.driver_options["secret"]
         )
 

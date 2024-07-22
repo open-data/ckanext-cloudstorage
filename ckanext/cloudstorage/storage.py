@@ -268,10 +268,12 @@ class ResourceCloudStorage(CloudStorage):
         """
         if self.filename:
             if self.can_use_advanced_azure:
-                from azure.storage import blob as azure_blob
+                # (canada fork only): fix import
+                # TODO: upstream contrib??
+                from azure.storage.blob.blockblobservice import BlockBlobService
                 from azure.storage.blob.models import ContentSettings
 
-                blob_service = azure_blob.BlockBlobService(
+                blob_service = BlockBlobService(
                     self.driver_options["key"], self.driver_options["secret"]
                 )
                 content_settings = None
@@ -418,9 +420,12 @@ class ResourceCloudStorage(CloudStorage):
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
         if self.can_use_advanced_azure and self.use_secure_urls:
-            from azure.storage import blob as azure_blob
+            # (canada fork only): fix imports
+            # TODO: upstream contrib??
+            from azure.storage.blob.blockblobservice import BlockBlobService
+            from azure.storage.blob.baseblobservice import BlobPermissions
 
-            blob_service = azure_blob.BlockBlobService(
+            blob_service = BlockBlobService(
                 self.driver_options["key"], self.driver_options["secret"]
             )
 
@@ -431,7 +436,7 @@ class ResourceCloudStorage(CloudStorage):
                     container_name=self.container_name,
                     blob_name=path,
                     expiry=datetime.utcnow() + timedelta(seconds=config_secure_ttl()),
-                    permission=azure_blob.BlobPermissions.READ,
+                    permission=BlobPermissions.READ,
                 ),
             )
         elif self.can_use_advanced_aws and self.use_secure_urls:

@@ -1,6 +1,6 @@
-boto3==1.17.112
-apache-libcloud==2.8.3
-ckanapi>=1.0,<5
+boto3==1.34.145
+apache-libcloud~=3.6
+ckanapi
 six
-azure-storage-blob==12.2.0
-msrest==0.6.21
+azure-storage-blob==12.21.0
+msrest==0.7.1
