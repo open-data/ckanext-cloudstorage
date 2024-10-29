@@ -11,6 +11,7 @@ import mimetypes
 
 from ckan.lib.munge import munge_filename
 from ckan import model
+from ckan.lib.uploader import get_resource_uploader
 
 from ckanapi import LocalCKAN
 
@@ -23,8 +24,12 @@ from ckanext.cloudstorage.model import (
     drop_tables
 )
 
-from ckan.plugins.toolkit import h
+from ckan.plugins.toolkit import h, get_action  # (canada fork only): filesize attribute
 from ckan.logic import NotFound
+
+# (canada fork only): filesize attribute
+from io import BytesIO
+import requests
 
 
 class FakeFileStorage(cgi.FieldStorage):
@@ -454,3 +459,59 @@ def reguess_mimetypes(resource_id=None, verbose=False):
 
     click.echo(u'Successfully reguessed {}/{} resource formats.'.format(success, count))
     click.echo(u'Failed to reguess {}/{} resource formats.'.format(failed, count))
+
+
+# (canada fork only): filesize attribute
+def set_filesizes(resource_id=None, verbose=False):
+    # type: (str|None, bool) -> None
+    query = model.Session.query(model.Resource.id)\
+        .filter(model.Resource.url_type == 'upload')\
+        .filter(model.Resource.state == 'active')
+
+    if resource_id:
+        query = query.filter(model.Resource.id == resource_id)
+
+    resource_ids = query.all()
+
+    if not resource_ids:
+        click.echo('No uploaded resources found.')
+        return
+
+    site_username = get_action('get_site_user')({'ignore_auth': True}, {})['name']
+    _max = len(resource_ids)
+
+    for _i, resource_id in enumerate(resource_ids, 1):
+        _resource_id = resource_id[0]
+        try:
+            resource = get_action('resource_show')({'user': site_username, 'ignore_auth': True}, {'id': _resource_id})
+        except Exception as e:
+            if verbose:
+                click.echo('[%s/%s] Could not find resource %s after all. Skipping...' % (_i, _max, _resource_id))
+            continue
+        upload = get_resource_uploader(resource)
+        if not isinstance(upload, CloudStorage):
+            if verbose:
+                click.echo('[%s/%s] Resource %s not using uploader CloudStorage. Skipping...' % (_i, _max, resource.get('id')))
+            continue
+        filename = os.path.basename(resource.get('url'))
+        upload_url = upload.get_url_from_filename(resource.get('id'), filename)
+        if verbose:
+            click.echo('[%s/%s] Resource %s file fetching from %s...' % (_i, _max, resource.get('id'), upload_url))
+        file_response = requests.get(upload_url)
+        file_upload = BytesIO(file_response.content)
+        file_upload.seek(0, os.SEEK_END)
+        filesize = file_upload.tell()
+        file_upload.close()
+        if verbose:
+            click.echo('[%s/%s] File size for resource %s is %s bytes.' % (_i, _max, resource.get('id'), filesize))
+        if filesize == resource.get('size'):
+            if verbose:
+                click.echo('[%s/%s] File size for resource %s is not different. Skipping...' % (_i, _max, resource.get('id')))
+            continue
+        try:
+            get_action('resource_patch')({'user': site_username, 'ignore_auth': True}, {'id': resource.get('id'), 'size': filesize})
+            if verbose:
+                click.echo('[%s/%s] Successfully set file size for resource %s' % (_i, _max, resource.get('id')))
+        except Exception as e:
+            if verbose:
+                click.echo('[%s/%s] Failed to set file size for resource %s: %s' % (_i, _max, resource.get('id'), str(e)))
