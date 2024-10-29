@@ -1,0 +1,1 @@
+Set the `filesize` attribute in the uploader class so CKAN can set the Resource file size metadata field in `package_update`.
