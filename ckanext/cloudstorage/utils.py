@@ -28,7 +28,6 @@ from ckan.plugins.toolkit import h, get_action  # (canada fork only): filesize a
 from ckan.logic import NotFound
 
 # (canada fork only): filesize attribute
-from io import BytesIO
 import requests
 
 
@@ -497,14 +496,20 @@ def set_filesizes(resource_id=None, verbose=False):
         upload_url = upload.get_url_from_filename(resource.get('id'), filename)
         if verbose:
             click.echo('[%s/%s] Resource %s file fetching from %s...' % (_i, _max, resource.get('id'), upload_url))
-        file_response = requests.get(upload_url)
-        file_upload = BytesIO(file_response.content)
-        file_upload.seek(0, os.SEEK_END)
-        filesize = file_upload.tell()
-        file_upload.close()
+        head_response = requests.head(upload_url)
+        if not hasattr(head_response, 'headers'):
+            if verbose:
+                click.echo('[%s/%s] Failed to get info for Resource %s. Skipping...' % (_i, _max, resource.get('id')))
+            continue
+        filesize = head_response.headers.get('Content-Length')
+        if not filesize:
+            if verbose:
+                click.echo('[%s/%s] Failed to get Content-Length for Resource %s. Reason: %s. Skipping...' %
+                           (_i, _max, resource.get('id'), head_response.headers.get('x-ms-error-code', 'Unknown')))
+            continue
         if verbose:
             click.echo('[%s/%s] File size for resource %s is %s bytes.' % (_i, _max, resource.get('id'), filesize))
-        if filesize == resource.get('size'):
+        if int(filesize) == int(resource.get('size')):
             if verbose:
                 click.echo('[%s/%s] File size for resource %s is not different. Skipping...' % (_i, _max, resource.get('id')))
             continue
