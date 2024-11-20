@@ -98,3 +98,17 @@ def list_linked_uploads(output):
 def reguess_mimetypes(resource_id=None, verbose=False):
     """Reguess mimtypes for all uploads."""
     utils.reguess_mimetypes(resource_id, verbose)
+
+
+# (canada fork only): filesize attribute
+@cloudstorage.command()
+@click.option(
+    "-r",
+    "--resource_id",
+    default=None,
+    help="A single resource ID to set the size metadata field for.",
+)
+@click.option('-v', '--verbose', is_flag=True, default=False, help='Higher verbosity level.')
+def calculate_filesizes(resource_id=None, verbose=False):
+    """Sets the `size` metadata field for all uploads."""
+    utils.set_filesizes(resource_id, verbose)

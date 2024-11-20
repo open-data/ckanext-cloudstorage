@@ -233,6 +233,11 @@ class ResourceCloudStorage(CloudStorage):
             resource["url"] = self.filename
             resource["url_type"] = "upload"
             resource["last_modified"] = datetime.utcnow()
+            # (canada fork only): filesize attribute
+            self.file_upload.seek(0, os.SEEK_END)
+            self.filesize = self.file_upload.tell()
+            # go back to the beginning of the file buffer
+            self.file_upload.seek(0, os.SEEK_SET)
         elif multipart_name and self.can_use_advanced_aws:
             # This means that file was successfully uploaded and stored
             # at cloud.
