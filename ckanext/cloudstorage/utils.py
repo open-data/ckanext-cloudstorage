@@ -509,7 +509,7 @@ def set_filesizes(resource_id=None, verbose=False):
             continue
         if verbose:
             click.echo('[%s/%s] File size for resource %s is %s bytes.' % (_i, _max, resource.get('id'), filesize))
-        if int(filesize) == int(resource.get('size')):
+        if resource.get('size') and int(filesize) == int(resource.get('size')):
             if verbose:
                 click.echo('[%s/%s] File size for resource %s is not different. Skipping...' % (_i, _max, resource.get('id')))
             continue
